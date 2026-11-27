@@ -30,8 +30,8 @@
 // CHECK-SAME: { ptr, ptr, ptr } { ptr @"\01L_selector_data(mainMethod:)", ptr @".str.10.v20@0:8i16", ptr @"$sSo9ImplClassC19objc_implementationE10mainMethodyys5Int32VFTo{{(\.ptrauth)?}}" }
 // CHECK-SAME: { ptr, ptr, ptr } { ptr @"\01L_selector_data(asyncMethodWithCompletionHandler:)", ptr @".str.16.v24@0:8@?<v@?>16", ptr @"$sSo9ImplClassC19objc_implementationE11asyncMethodyyYaFTo{{(\.ptrauth)?}}" }
 // CHECK-SAME: { ptr, ptr, ptr } { ptr @"\01L_selector_data(extensionMethod:)", ptr @".str.10.v20@0:8i16", ptr @"$sSo9ImplClassC19objc_implementationE15extensionMethodyys5Int32VFTo{{(\.ptrauth)?}}" }
-// CHECK-SAME: { ptr, ptr, ptr } { ptr @"\01L_selector_data(copyWithZone:)", ptr @".str.11.@24@0:8^v16", ptr @"$sSo9ImplClassC19objc_implementationE4copy4withypSg10ObjectiveC6NSZoneVSg_tFTo{{(\.ptrauth)?}}" }
-// CHECK-SAME: { ptr, ptr, ptr } { ptr @"\01L_selector_data(mutableCopyWithZone:)", ptr @".str.11.@24@0:8^v16", ptr @"$sSo9ImplClassC19objc_implementationE11mutableCopy4withypSg10ObjectiveC6NSZoneVSg_tFTo{{(\.ptrauth)?}}" }
+// CHECK-SAME: { ptr, ptr, ptr } { ptr @"\01L_selector_data(copyWithZone:)", ptr @".str.20.@24@0:8^{_NSZone=}16", ptr @"$sSo9ImplClassC19objc_implementationE4copy4withypSg10ObjectiveC6NSZoneVSg_tFTo{{(\.ptrauth)?}}" }
+// CHECK-SAME: { ptr, ptr, ptr } { ptr @"\01L_selector_data(mutableCopyWithZone:)", ptr @".str.20.@24@0:8^{_NSZone=}16", ptr @"$sSo9ImplClassC19objc_implementationE11mutableCopy4withypSg10ObjectiveC6NSZoneVSg_tFTo{{(\.ptrauth)?}}" }
 // CHECK-SAME: { ptr, ptr, ptr } { ptr @"\01L_selector_data(dealloc)", ptr @".str.7.v16@0:8", ptr @"$sSo9ImplClassC19objc_implementationEfDTo{{(\.ptrauth)?}}" }, { ptr, ptr, ptr } { ptr [[selector_data__cxx_destruct]], ptr @".str.7.v16@0:8", ptr @"$sSo9ImplClassCfETo{{(\.ptrauth)?}}" }
 // CHECK-LABEL: @_IVARS_ImplClass = internal constant { i32, i32, [2 x { ptr, ptr, ptr, i32, i32 }] } { i32 32, i32 2, [2 x { ptr, ptr, ptr, i32, i32 }] [
 // CHECK-SAME: { ptr, ptr, ptr, i32, i32 } { ptr @"$sSo9ImplClassC19objc_implementationE12implPropertys5Int32VvpWvd", ptr @.str.12.implProperty, ptr @.str.1.i, i32 2, i32 4 }

@@ -4554,17 +4554,19 @@ static const clang::Decl *findClangMethod(ValueDecl *method) {
     if (auto *decl = methodFn->getClangDecl())
       return decl;
 
-    if (auto overridden = methodFn->getOverriddenDecl())
-      return findClangMethod(overridden);
-
     if (auto *implementedDecl = method->getImplementedObjCDecl())
       if (auto *implementedFunction = implementedDecl->getClangDecl())
         return implementedFunction;
+
+    if (auto overridden = methodFn->getOverriddenDecl())
+      return findClangMethod(overridden);
   }
 
   if (auto *constructor = dyn_cast<ConstructorDecl>(method)) {
     if (auto *decl = constructor->getClangDecl())
       return decl;
+    if (auto *interface = constructor->getImplementedObjCDecl())
+      return interface->getClangDecl();
   }
 
   return nullptr;
@@ -5496,6 +5498,13 @@ getAbstractionPatternForConstant(TypeConverter &converter, ASTContext &ctx,
   }
 
   const clang::Decl *clangDecl = bridgedFn->getClangDecl();
+  if (!clangDecl) {
+    // Preserve the original foreign types when bridging an Objective-C
+    // implementation, before Bool can be lowered to the target's ObjCBool.
+    if (auto *interface = bridgedFn->getImplementedObjCDecl())
+      clangDecl = dyn_cast_or_null<clang::ObjCMethodDecl>(
+          interface->getClangDecl());
+  }
   if (!clangDecl) {
     // A `@cxx @implementation` of a C++ method is bridged like the method it
     // implements.

@@ -1289,8 +1289,15 @@ static CanSILFunctionType getObjCMethodType(IRGenModule &IGM,
 
 static clang::CanQualType getObjCPropertyType(IRGenModule &IGM,
                                               VarDecl *property) {
-  // Use the lowered return type of the foreign getter.
+  // Preserve the original property type for an Objective-C implementation.
+  // Lowering to Swift and back can lose distinctions such as BOOL and _Bool.
   auto getter = property->getOpaqueAccessor(AccessorKind::Get);
+  if (auto *interface = getter->getImplementedObjCDecl()) {
+    if (auto *method = dyn_cast_or_null<clang::ObjCMethodDecl>(
+            interface->getClangDecl()))
+      return IGM.getClangASTContext().getCanonicalType(method->getReturnType());
+  }
+  // Otherwise use the lowered return type of the foreign getter.
   CanSILFunctionType methodTy = getObjCMethodType(IGM, getter);
   return IGM.getClangType(
     methodTy->getFormalCSemanticResult(IGM.getSILModule()).getASTType());
@@ -1363,6 +1370,9 @@ static llvm::Constant *getObjCEncodingForTypes(IRGenModule &IGM,
 static llvm::Constant *
 getObjectEncodingFromClangNode(IRGenModule &IGM, Decl *d,
                                bool useExtendedEncoding) {
+  if (!d->hasClangNode())
+    if (auto *interface = d->getImplementedObjCDecl())
+      d = interface;
   // Use the clang node's encoding if there is a clang node.
   if (d->getClangNode()) {
     auto clangDecl = d->getClangNode().castAsDecl();

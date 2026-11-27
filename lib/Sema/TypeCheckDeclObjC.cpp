@@ -33,6 +33,7 @@
 #include "swift/Basic/Assertions.h"
 #include "swift/Basic/StringExtras.h"
 #include "swift/ClangImporter/ClangImporter.h"
+#include "swift/ClangImporter/ClangImporterRequests.h"
 #include "swift/Parse/Lexer.h"
 
 #include "clang/AST/DeclCXX.h"
@@ -3281,7 +3282,9 @@ bool swift::diagnoseObjCUnsatisfiedOptReqConflicts(SourceFile &sf) {
 }
 
 void TypeChecker::checkObjCImplementation(Decl *D) {
-  if (!D->getImplementedObjCDecl())
+  // Members are checked by their implementation extension. A cached match
+  // does not give the member its own implementation attribute or checker.
+  if (!D->isObjCImplementation() || !D->getImplementedObjCDecl())
     return;
 
   evaluateOrDefault(D->getASTContext().evaluator,
@@ -4618,6 +4621,7 @@ private:
           diagnoseUnretainedForeignResult(req, cand))
         return;
       diagnoseCxxOverrideKeyword(req, cand);
+      recordObjCImplementation(req, cand);
       // If this member will require a vtable entry, diagnose that now.
       diagnoseVTableUse(cand);
       // The storage matched, but its accessors may not have.
@@ -4812,6 +4816,34 @@ private:
 
     if (!mustBe)
       restriction.emitNoteForDecl(req);
+  }
+
+  /// Preserve the matched foreign declaration for lowering and type encodings.
+  /// Looking up the Swift signature again would lose distinctions such as
+  /// Objective-C BOOL versus C _Bool, which both import as Swift Bool.
+  void recordObjCImplementation(ValueDecl *req, ValueDecl *cand) {
+    if (!isa_and_nonnull<clang::ObjCMethodDecl,
+                        clang::ObjCPropertyDecl>(req->getClangDecl()))
+      return;
+
+    auto record = [](Decl *interface, Decl *implementation) {
+      interface->setCachedLacksObjCInterfaceOrImplementation(false);
+      implementation->setCachedLacksObjCInterfaceOrImplementation(false);
+      ObjCInterfaceAndImplementationRequest{implementation}.cacheResult(
+          ObjCInterfaceAndImplementation({interface}, implementation));
+    };
+    record(req, cand);
+
+    auto *reqStorage = dyn_cast<AbstractStorageDecl>(req);
+    auto *candStorage = dyn_cast<AbstractStorageDecl>(cand);
+    if (!reqStorage || !candStorage)
+      return;
+
+    for (auto kind : {AccessorKind::Get, AccessorKind::Set}) {
+      if (auto *reqAccessor = reqStorage->getAccessor(kind))
+        if (auto *candAccessor = candStorage->getOpaqueAccessor(kind))
+          record(reqAccessor, candAccessor);
+    }
   }
 
   /// Diagnoses the explicitly written accessors of \p cand whose availability
