@@ -40,6 +40,7 @@
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/RecordLayout.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalVariable.h"
@@ -1667,6 +1668,145 @@ namespace {
                                  weakLinkage);
     }
 
+    /// Describe only implementation classes whose complete owned storage can
+    /// be handled by Objective-C ARC. Never publish a partial ownership map.
+    llvm::Constant *buildStrongIvarLayout() {
+      auto nullLayout = llvm::ConstantPointerNull::get(IGM.Int8PtrTy);
+      auto *cls = getClass();
+      if (!FieldLayout->hasObjCImplementation() || cls->isGenericContext() ||
+          getSpecializedGenericType() ||
+          FieldLayout->doesMetadataRequireRelocation() ||
+          FieldLayout->doesMetadataRequireInitialization() ||
+          FieldLayout->doesMetadataRequireUpdate())
+        return nullLayout;
+
+      Size pointerSize = IGM.getPointerSize();
+      Size start = FieldLayout->getInstanceStart().roundUpToAlignment(
+          IGM.getPointerAlignment());
+      SmallVector<Size, 8> strongOffsets;
+      bool supported = true;
+      unsigned fieldCount = 0;
+      forEachField(IGM, cls, [&](Field field) {
+        ++fieldCount;
+        if (!supported)
+          return;
+        if (field.getKind() != Field::Var) {
+          supported = false;
+          return;
+        }
+
+        auto pair = FieldLayout->getFieldAccessAndElement(field);
+        auto &element = pair.second;
+        auto *storage = dyn_cast<FixedTypeInfo>(&element.getType());
+        if (pair.first == FieldAccess::ConstantIndirect || !storage ||
+            !element.hasByteOffset()) {
+          supported = false;
+          return;
+        }
+
+        auto type = field.getType(IGM, getSelfType(cls)).getASTType();
+        if (isa<ReferenceStorageType>(type)) {
+          // Swift weak and checked-unowned storage is not an ObjC slot.
+          supported = false;
+          return;
+        }
+        bool isOptional = false;
+        if (auto objectType = type.getOptionalObjectType()) {
+          isOptional = true;
+          type = objectType;
+        }
+
+        // Deliberately exclude arbitrary POD aggregates and generic wrappers.
+        bool scalar = type->isBool() || type->isInt() || type->isUInt() ||
+                      type->isInt8() || type->isUInt8() ||
+                      type->isInt16() || type->isUInt16() ||
+                      type->isInt32() || type->isUInt32() ||
+                      type->isInt64() || type->isUInt64() ||
+                      type->isFloat() || type->isDouble() ||
+                      type->isUnsafeRawPointer() ||
+                      type->isUnsafeMutableRawPointer();
+        if (scalar &&
+            storage->isTriviallyDestroyable(ResilienceExpansion::Minimal) &&
+            storage->isCopyable(ResilienceExpansion::Minimal))
+          return;
+
+        auto *referent = type->getClassDecl();
+        if (!referent || referent->isGenericContext() ||
+            referent->getObjectModel() != ReferenceCounting::ObjC ||
+            storage->getFixedSize() != pointerSize) {
+          supported = false;
+          return;
+        }
+
+        // Single-payload enum TypeInfos do not advertise themselves as single
+        // retainable pointers. Query the concrete class payload instead.
+        auto &payloadTI =
+            IGM.getTypeInfo(SILType::getPrimitiveObjectType(type));
+        auto *payload = dyn_cast<FixedTypeInfo>(&payloadTI);
+        ReferenceCounting refcounting;
+        if (!payload || !payload->isLoadable() ||
+            payload->getFixedSize() != pointerSize ||
+            !payload->isSingleRetainablePointer(ResilienceExpansion::Minimal,
+                                               &refcounting) ||
+            refcounting != ReferenceCounting::ObjC) {
+          supported = false;
+          return;
+        }
+
+        // For exactly one Optional layer, GenEnum's nullable-reference rule
+        // uses payload extra inhabitant zero for .none. Require that bit
+        // pattern to be the null pointer before exposing this slot to ObjC.
+        if (isOptional &&
+            (payload->getFixedExtraInhabitantCount(IGM) == 0 ||
+             !payload->getFixedExtraInhabitantValue(
+                         IGM, pointerSize.getValueInBits(), 0).isZero())) {
+          supported = false;
+          return;
+        }
+
+        Size offset = element.getByteOffset();
+        if (offset < start || !offset.isMultipleOf(pointerSize) ||
+            offset + pointerSize > FieldLayout->getSize()) {
+          supported = false;
+          return;
+        }
+        strongOffsets.push_back(offset);
+      });
+      if (!supported || fieldCount != FieldLayout->getElements().size() ||
+          strongOffsets.empty())
+        return nullLayout;
+
+      // ARC maps start at aligned instanceStart, not at the object header.
+      // Each byte skips its high nibble's words, then scans its low nibble's
+      // words. Split long runs and terminate with a zero byte.
+      llvm::sort(strongOffsets);
+      SmallVector<uint8_t, 8> bytes;
+      uint64_t nextWord = 0;
+      for (Size offset : strongOffsets) {
+        uint64_t word = (offset - start).getValue() / pointerSize.getValue();
+        if (word < nextWord)
+          return nullLayout;
+        uint64_t skip = word - nextWord;
+        if (skip == 0 && !bytes.empty() && (bytes.back() & 15) < 15) {
+          ++bytes.back();
+        } else {
+          while (skip > 15) {
+            bytes.push_back(0xf0);
+            skip -= 15;
+          }
+          bytes.push_back((skip << 4) | 1);
+        }
+        nextWord = word + 1;
+      }
+      bytes.push_back(0);
+      ConstantInitBuilder builder(IGM);
+      auto array = builder.beginArray(IGM.Int8Ty);
+      for (uint8_t byte : bytes)
+        array.addInt(IGM.Int8Ty, byte);
+      return buildGlobalVariable(array, "_STRONG_IVAR_LAYOUT_", true,
+                                 llvm::GlobalVariable::InternalLinkage);
+    }
+
     void emitRODataFields(ConstantStructBuilder &b,
                           ForMetaClass_t forMeta,
                           HasUpdateCallback_t hasUpdater) {
@@ -1715,8 +1855,10 @@ namespace {
         b.add(IGM.getAddrOfTypeMetadata(*specializedGenericType));
       } else {
         //     const uint8_t *IvarLayout;
-        // GC/ARC layout.  TODO.
-        b.addNullPointer(IGM.Int8PtrTy);
+        if (forMeta || hasUpdater)
+          b.addNullPointer(IGM.Int8PtrTy);
+        else
+          b.add(buildStrongIvarLayout());
       }
 
       //   const char *name;

@@ -22,6 +22,7 @@
 // TODO: Why the extra i32 field above?
 
 // Class
+// CHECK-DAG: @_STRONG_IVAR_LAYOUT_ImplClass = internal constant [2 x i8] c"\11\00"
 // CHECK: [[selector_data__cxx_destruct:@[^, ]+]] = private global [14 x i8] c".cxx_destruct\00", section "__TEXT,__objc_methname,cstring_literals", align 1
 // CHECK-LABEL: @_INSTANCE_METHODS_ImplClass = internal constant { i32, i32, [10 x { ptr, ptr, ptr }] } { i32 24, i32 10, [10 x { ptr, ptr, ptr }] [
 // CHECK-SAME: { ptr, ptr, ptr } { ptr @"\01L_selector_data(init)", ptr @".str.7.@16@0:8", ptr @"$sSo9ImplClassC19objc_implementationEABycfcTo{{(\.ptrauth)?}}" }
@@ -39,7 +40,7 @@
 // CHECK-LABEL: @_PROPERTIES_ImplClass = internal constant { i32, i32, [1 x { ptr, ptr }] } { i32 16, i32 1, [1 x { ptr, ptr }] [
 // CHECK-SAME: { ptr, ptr } { ptr @.str.12.implProperty, ptr @".str.18.Ti,N,VimplProperty" }
 // FIXME: Should just be @_PROTOCOLS_ImplClass, but an IRGen bug causes the protocol list to be emitted twice.
-// CHECK: [[_DATA_ImplClass:@[^, ]+]] = internal constant { i32, i32, i32, i32, ptr, ptr, ptr, ptr, ptr, ptr, ptr } { i32 388, i32 8, i32 24, i32 0, ptr null, ptr @.str.9.ImplClass, ptr @_INSTANCE_METHODS_ImplClass, ptr @_PROTOCOLS_ImplClass.{{[0-9]+}}, ptr @_IVARS_ImplClass, ptr null, ptr @_PROPERTIES_ImplClass }, section "__DATA, __objc_data", align 8
+// CHECK: [[_DATA_ImplClass:@[^, ]+]] = internal constant { i32, i32, i32, i32, ptr, ptr, ptr, ptr, ptr, ptr, ptr } { i32 388, i32 8, i32 24, i32 0, ptr @_STRONG_IVAR_LAYOUT_ImplClass, ptr @.str.9.ImplClass, ptr @_INSTANCE_METHODS_ImplClass, ptr @_PROTOCOLS_ImplClass.{{[0-9]+}}, ptr @_IVARS_ImplClass, ptr null, ptr @_PROPERTIES_ImplClass }, section "__DATA, __objc_data", align 8
 // CHECK: @"OBJC_CLASS_$_ImplClass" = global <{ i64, ptr, ptr, ptr, i64 }> <{ i64 ptrtoint (ptr @"OBJC_METACLASS_$_ImplClass" to i64), ptr @"OBJC_CLASS_$_NSObject", ptr @_objc_empty_cache, ptr null, i64 ptrtoint (ptr [[_DATA_ImplClass]] to i64) }>, section "__DATA,__objc_data, regular", align 8
 
 // Swift metadata
